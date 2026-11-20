@@ -1,0 +1,22 @@
+[
+  {
+    "slug": "olympic-paddington",
+    "name": "Olympic Hotel Paddington",
+    "url": "https://www.booking.com/hotel/au/olympic-paddington.en-gb.html"
+  },
+  {
+    "slug": "venus-potts-point-sydney",
+    "name": "Potts Point",
+    "url": "https://www.booking.com/hotel/au/venus-potts-point-sydney.en-gb.html"
+  },
+  {
+    "slug": "venus-surry-hills",
+    "name": "Central Sydney",
+    "url": "https://www.booking.com/hotel/au/venus-surry-hills.en-gb.html"
+  },
+  {
+    "slug": "chateau-de-venus",
+    "name": "Darling Harbour",
+    "url": "https://www.booking.com/hotel/au/chateau-de-venus.en-gb.html"
+  }
+]
