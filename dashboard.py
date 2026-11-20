@@ -95,43 +95,58 @@ if not chosen_props:
 df_props = df_all[df_all["property_name"].isin(chosen_props)]
 df = insights.in_range(df_props, start, end)
 
+period_name = preset if preset != "Custom" else "Custom range"
+st.markdown(f"**Showing: {period_name}** ({start:%d %b %Y} to {end:%d %b %Y}) · "
+            f"{len(chosen_props)} of {len(properties)} properties. Change this in the sidebar.")
+
+# ------------------------------------------------------------------ selected period
+p1, p2, p3, p4 = st.columns(4)
+n_period = len(df)
+p1.metric(f"Avg rating, {period_name.lower()}", f"{insights.avg(df):.1f}" if n_period else "-")
+p2.metric("Reviews", f"{n_period:,}")
+p3.metric("Negative (below 6)",
+          f"{round(100 * (df['sentiment'] == 'Negative').mean())}%" if n_period else "-")
+p4.metric("Positive (8 or above)",
+          f"{round(100 * (df['sentiment'] == 'Positive').mean())}%" if n_period else "-")
+
 # ------------------------------------------------------------------ this week vs last week
 wk = insights.week_comparison(df_props, today)
-c1, c2, c3, c4 = st.columns(4)
-c1.metric(f"Avg rating this week (from {wk['this_start']:%d %b})",
+st.caption(f"This week vs last week (always the current week, from Monday {wk['this_start']:%d %b})")
+c1, c2, c3, _ = st.columns(4)
+c1.metric("Avg rating this week",
           f"{wk['this_avg']:.1f}" if wk["this_avg"] is not None else "No reviews",
           f"{wk['delta']:+.1f} vs last week" if wk["delta"] is not None else None)
 c2.metric("Avg rating last week", f"{wk['last_avg']:.1f}" if wk["last_avg"] is not None else "No reviews")
 c3.metric("Reviews this week / last week", f"{wk['this_n']} / {wk['last_n']}")
-c4.metric(f"Avg rating, selected period", f"{insights.avg(df):.1f}" if len(df) else "-",
-          help=f"{start:%d %b %Y} to {end:%d %b %Y}, {len(df)} reviews")
 if wk["low_sample"]:
     st.caption("⚠️ Fewer than 3 reviews in one of the weeks. A single review can move the "
-               "weekly average a lot, so compare with the 90-day figure below.")
+               "weekly average a lot, so compare with the period figures above.")
 
 # ------------------------------------------------------------------ headline insights
 st.subheader("What guests are saying")
-tab_week, tab_period = st.tabs(["This week", "Selected period"])
+tab_period, tab_week = st.tabs([period_name, "This week"])
+with tab_period:
+    for s in insights.headline_insights(df_props, start, end, f"in this period"):
+        st.markdown(f"- {s}")
 with tab_week:
     for s in insights.headline_insights(df_props, wk["this_start"], today, "this week"):
-        st.markdown(f"- {s}")
-with tab_period:
-    for s in insights.headline_insights(df_props, start, end, "in the selected period"):
         st.markdown(f"- {s}")
 
 # ------------------------------------------------------------------ property breakdown
 st.subheader("By property")
-table = insights.property_table(df_all, today, chosen_props)
+table = insights.property_table(df_all, today, chosen_props, start, end)
 st.dataframe(
     table, hide_index=True, width="stretch",
     column_config={
+        "Avg (period)": st.column_config.NumberColumn(format="%.1f"),
+        "% negative": st.column_config.NumberColumn(format="%d%%"),
         "This week": st.column_config.NumberColumn(format="%.1f"),
         "Last week": st.column_config.NumberColumn(format="%.1f"),
         "Change": st.column_config.NumberColumn(format="%+.1f"),
-        "Last 90 days": st.column_config.NumberColumn(format="%.1f"),
-        "% negative (90d)": st.column_config.NumberColumn(format="%d%%"),
     },
 )
+st.caption("'(period)' columns follow the date range in the sidebar. "
+           "This week / Last week / Change are always the current and previous week.")
 if not cats.empty:
     with st.expander("Booking.com's own category scores (all-time, as shown on Booking)"):
         name_by_slug = dict(zip(df_all["property_slug"], df_all["property_name"]))
@@ -141,25 +156,28 @@ if not cats.empty:
 
 # ------------------------------------------------------------------ trends
 st.subheader("Trends")
+# Weekly points get too noisy over long ranges, so switch to monthly beyond ~6 months.
+monthly = (end - start).days > 186
+bucket, unit = ("month_start", "month") if monthly else ("week_start", "week")
 t1, t2 = st.columns(2)
 with t1:
-    wt = insights.weekly_trend(df)
+    wt = insights.weekly_trend(df, bucket)
     if len(wt):
-        fig = px.line(wt, x="week_start", y="avg_score", color="property_name", markers=True,
+        fig = px.line(wt, x="period", y="avg_score", color="property_name", markers=True,
                       hover_data={"reviews": True},
-                      labels={"week_start": "Week starting", "avg_score": "Avg rating",
+                      labels={"period": f"{unit.title()} starting", "avg_score": "Avg rating",
                               "property_name": "Property"},
-                      title="Average rating by week")
+                      title=f"Average rating by {unit}")
         fig.update_yaxes(range=[0, 10.5])
         st.plotly_chart(fig, width="stretch")
 with t2:
-    ws = insights.weekly_sentiment(df)
+    ws = insights.weekly_sentiment(df, bucket)
     if len(ws):
-        fig = px.bar(ws, x="week_start", y="reviews", color="sentiment",
+        fig = px.bar(ws, x="period", y="reviews", color="sentiment",
                      color_discrete_map=SENT_COLOURS,
                      category_orders={"sentiment": ["Positive", "Mixed", "Negative"]},
-                     labels={"week_start": "Week starting", "reviews": "Reviews", "sentiment": ""},
-                     title="Positive vs negative reviews by week")
+                     labels={"period": f"{unit.title()} starting", "reviews": "Reviews", "sentiment": ""},
+                     title=f"Positive vs negative reviews by {unit}")
         st.plotly_chart(fig, width="stretch")
 st.caption("Positive = score 8 or above. Mixed = 6 to 7.9. Negative = below 6.")
 

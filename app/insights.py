@@ -28,6 +28,7 @@ def load_reviews(conn=None) -> pd.DataFrame:
     df["date"] = df["reviewed_at"].dt.date
     df["week_start"] = (df["reviewed_at"].dt.normalize()
                         - pd.to_timedelta(df["reviewed_at"].dt.weekday, unit="D")).dt.date
+    df["month_start"] = df["reviewed_at"].dt.tz_localize(None).dt.to_period("M").dt.start_time.dt.date
     df["sentiment"] = df["score"].map(classify.sentiment)
     df["has_text"] = ~(df["positive_text"].map(classify.is_non_answer)
                        & df["negative_text"].map(classify.is_non_answer))
@@ -78,24 +79,29 @@ def week_comparison(df: pd.DataFrame, today: date) -> dict:
     }
 
 
-def property_table(df: pd.DataFrame, today: date, properties: list[str]) -> pd.DataFrame:
+def property_table(df: pd.DataFrame, today: date, properties: list[str],
+                   start: date | None = None, end: date | None = None) -> pd.DataFrame:
+    """One row per property. '(period)' columns use start..end (default: last 90 days);
+    the week columns are always this week and last week."""
+    end = end or today
+    start = start or today - timedelta(days=89)
     this_start, last_start, _ = week_bounds(today)
     rows = []
     for name in properties:
         p = df[df["property_name"] == name]
         tw = in_range(p, this_start, today)
         lw = in_range(p, last_start, this_start - timedelta(days=1))
-        d90 = in_range(p, today - timedelta(days=89), today)
-        neg90 = d90[d90["sentiment"] == "Negative"]
-        top = top_topics(d90, "complaints", base="all", n=1)
+        per = in_range(p, start, end)
+        neg = per[per["sentiment"] == "Negative"]
+        top = top_topics(per, "complaints", base="all", n=1)
         rows.append({
             "Property": name,
-            "This week": avg(tw), "Reviews this week": len(tw),
-            "Last week": avg(lw), "Reviews last week": len(lw),
+            "Avg (period)": avg(per), "Reviews (period)": len(per),
+            "% negative": round(100 * len(neg) / len(per)) if len(per) else None,
+            "Top complaint (period)": top[0][0] if top else "-",
+            "This week": avg(tw), "Last week": avg(lw),
             "Change": (round1(avg(tw) - avg(lw)) if len(tw) and len(lw) else None),
-            "Last 90 days": avg(d90), "Reviews (90d)": len(d90),
-            "% negative (90d)": round(100 * len(neg90) / len(d90)) if len(d90) else None,
-            "Top complaint (90d)": top[0][0] if top else "-",
+            "Reviews this / last week": f"{len(tw)} / {len(lw)}",
         })
     return pd.DataFrame(rows)
 
@@ -158,15 +164,18 @@ def headline_insights(df: pd.DataFrame, start: date, end: date, label: str) -> l
     return out
 
 
-def weekly_trend(df: pd.DataFrame) -> pd.DataFrame:
-    g = df.groupby(["week_start", "property_name"]).agg(
+def weekly_trend(df: pd.DataFrame, by: str = "week_start") -> pd.DataFrame:
+    """Average rating per property per week (by='week_start') or month (by='month_start').
+    The bucket column is always returned as 'period'."""
+    g = df.groupby([by, "property_name"]).agg(
         avg_score=("score", "mean"), reviews=("score", "size")).reset_index()
     g["avg_score"] = g["avg_score"].map(round1)
-    return g
+    return g.rename(columns={by: "period"})
 
 
-def weekly_sentiment(df: pd.DataFrame) -> pd.DataFrame:
-    return (df.groupby(["week_start", "sentiment"]).size().reset_index(name="reviews"))
+def weekly_sentiment(df: pd.DataFrame, by: str = "week_start") -> pd.DataFrame:
+    return (df.groupby([by, "sentiment"]).size().reset_index(name="reviews")
+            .rename(columns={by: "period"}))
 
 
 def topic_trend(df: pd.DataFrame, kind: str = "complaints") -> pd.DataFrame:
