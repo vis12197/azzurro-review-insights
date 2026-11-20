@@ -6,6 +6,7 @@ hotels' ops team thinks about "this week".
 from __future__ import annotations
 
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 import pandas as pd
 
@@ -50,8 +51,18 @@ def in_range(df: pd.DataFrame, start: date, end_inclusive: date) -> pd.DataFrame
     return df[(df["date"] >= start) & (df["date"] <= end_inclusive)]
 
 
+def round1(x: float) -> float:
+    """Round to 1 decimal, halves up (4.25 -> 4.3), the way people and spreadsheets expect.
+    Python's round() would give 4.2 (banker's rounding) while the browser shows 4.3."""
+    return float(Decimal(repr(float(x))).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+def plural(n: int, word: str) -> str:
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
 def avg(df: pd.DataFrame) -> float | None:
-    return round(float(df["score"].mean()), 2) if len(df) else None
+    return round1(df["score"].mean()) if len(df) else None
 
 
 def week_comparison(df: pd.DataFrame, today: date) -> dict:
@@ -62,7 +73,7 @@ def week_comparison(df: pd.DataFrame, today: date) -> dict:
     return {
         "this_start": this_start, "last_start": last_start,
         "this_avg": a, "this_n": len(this_wk), "last_avg": b, "last_n": len(last_wk),
-        "delta": round(a - b, 2) if a is not None and b is not None else None,
+        "delta": round1(a - b) if a is not None and b is not None else None,
         "low_sample": len(this_wk) < MIN_SAMPLE or len(last_wk) < MIN_SAMPLE,
     }
 
@@ -81,7 +92,7 @@ def property_table(df: pd.DataFrame, today: date, properties: list[str]) -> pd.D
             "Property": name,
             "This week": avg(tw), "Reviews this week": len(tw),
             "Last week": avg(lw), "Reviews last week": len(lw),
-            "Change": (round(avg(tw) - avg(lw), 2) if len(tw) and len(lw) else None),
+            "Change": (round1(avg(tw) - avg(lw)) if len(tw) and len(lw) else None),
             "Last 90 days": avg(d90), "Reviews (90d)": len(d90),
             "% negative (90d)": round(100 * len(neg90) / len(d90)) if len(d90) else None,
             "Top complaint (90d)": top[0][0] if top else "-",
@@ -112,7 +123,7 @@ def headline_insights(df: pd.DataFrame, start: date, end: date, label: str) -> l
         return [f"No reviews were published {label}."]
     neg = period[period["sentiment"] == "Negative"]
     out.append(
-        f"{len(period)} reviews {label}, average {avg(period):.1f}/10. "
+        f"{plural(len(period), 'review')} {label}, average {avg(period):.1f}/10. "
         f"{len(neg)} negative (below {classify.NEGATIVE_MAX:.0f}), "
         f"{(period['sentiment'] == 'Positive').sum()} positive (8 or above)."
     )
@@ -134,14 +145,15 @@ def headline_insights(df: pd.DataFrame, start: date, end: date, label: str) -> l
     praise = top_topics(period, "praise", base="all", n=1)
     if praise:
         t, c, share = praise[0]
-        out.append(f"Most praised: {t.lower()} ({share}% of reviews).")
+        out.append(f"Most praised: {t.lower()} ({c} of {len(tagged)} reviews with English "
+                   f"comments, {share}%).")
     if 0 < len(neg_tagged) < MIN_SAMPLE:
-        out.append(f"Note: only {len(neg_tagged)} negative review(s) with English comments {label}, "
+        out.append(f"Note: only {plural(len(neg_tagged), 'negative review')} with English comments {label}, "
                    f"so percentages can swing a lot. Read the reviews before acting.")
     untagged = int((period["has_text"] & ~period["taggable"]).sum())
     no_text = int((~period["has_text"]).sum())
-    out.append(f"Coverage: topics come from {len(tagged)} reviews with English comments. "
-               f"{untagged} reviews in other languages and {no_text} score-only reviews "
+    out.append(f"Coverage: topics come from {plural(len(tagged), 'review')} with English comments. "
+               f"{plural(untagged, 'review')} in other languages and {no_text} score-only "
                f"count in the averages but not in the topics.")
     return out
 
@@ -149,7 +161,7 @@ def headline_insights(df: pd.DataFrame, start: date, end: date, label: str) -> l
 def weekly_trend(df: pd.DataFrame) -> pd.DataFrame:
     g = df.groupby(["week_start", "property_name"]).agg(
         avg_score=("score", "mean"), reviews=("score", "size")).reset_index()
-    g["avg_score"] = g["avg_score"].round(2)
+    g["avg_score"] = g["avg_score"].map(round1)
     return g
 
 
@@ -167,12 +179,18 @@ def topic_trend(df: pd.DataFrame, kind: str = "complaints") -> pd.DataFrame:
 
 
 def last_runs(conn=None) -> pd.DataFrame:
+    """Per property: when it last updated successfully and how the last finished attempt went."""
     conn = conn or db.connect()
     return pd.read_sql_query(
-        """SELECT property_slug, MAX(finished_at) AS finished_at, status, method, fetched, inserted,
-                  total_on_site, message
-           FROM scrape_runs WHERE id IN (SELECT MAX(id) FROM scrape_runs GROUP BY property_slug)
-           GROUP BY property_slug""", conn)
+        """SELECT p.property_slug,
+                  (SELECT MAX(finished_at) FROM scrape_runs
+                    WHERE property_slug = p.property_slug AND status IN ('ok', 'partial')) AS last_ok_at,
+                  (SELECT status FROM scrape_runs WHERE property_slug = p.property_slug
+                    AND status != 'running' ORDER BY id DESC LIMIT 1) AS last_status,
+                  (SELECT message FROM scrape_runs WHERE property_slug = p.property_slug
+                    AND status != 'running' ORDER BY id DESC LIMIT 1) AS last_message
+           FROM (SELECT DISTINCT property_slug FROM scrape_runs) p
+           ORDER BY p.property_slug""", conn)
 
 
 def category_scores(conn=None) -> pd.DataFrame:

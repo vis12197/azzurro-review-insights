@@ -65,7 +65,7 @@ TOPICS: dict[str, list[str]] = {
     ],
     "Location": [
         r"location", r"located", r"position\w*", r"close to", r"walking distance", r"distance",
-        r"station", r"train", r"bus\w*", r"transport", r"cbd",
+        r"station", r"train", r"bus(?:es)?", r"bus stop", r"transport", r"cbd",
         r"neighbou?rhood", r"restaurants?", r"cafes?", r"shops?", r"stadium", r"beach",
         r"central\w*", r"convenien\w*",
     ],

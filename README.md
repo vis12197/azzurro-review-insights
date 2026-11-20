@@ -40,7 +40,10 @@ python -m app.collector --full     # rescan everything (picks up edited reviews 
 python -m app.collector --property olympic-paddington --headful   # one hotel, visible browser
 ```
 
-Staff can also click **Refresh reviews** in the dashboard sidebar, which runs the same command.
+Staff can also click **Refresh reviews** in the dashboard sidebar. It runs the same command in the
+background (the page stays usable) and the sidebar shows when each hotel last updated. A file lock
+(`data/collector.lock`) means only one collection runs at a time, however many times it's clicked
+or if cron overlaps.
 For daily updates, schedule it, e.g. with cron:
 
 ```

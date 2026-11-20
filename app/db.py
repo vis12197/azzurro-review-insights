@@ -109,18 +109,43 @@ def known_ids(conn: sqlite3.Connection, slug: str) -> set[str]:
 
 
 def start_run(conn, slug: str, started_at: str) -> int:
-    # A run still "running" after 2 hours was killed (machine slept, Ctrl+C...). Say so.
-    conn.execute(
-        """UPDATE scrape_runs SET status='failed', message='interrupted (no finish recorded)'
-           WHERE property_slug=? AND status='running' AND started_at < datetime(?, '-2 hours')""",
-        (slug, started_at),
-    )
     cur = conn.execute(
         "INSERT INTO scrape_runs (property_slug, started_at, status) VALUES (?,?, 'running')",
         (slug, started_at),
     )
     conn.commit()
     return cur.lastrowid
+
+
+LOCK_PATH = DEFAULT_DB.parent / "collector.lock"
+
+
+def acquire_collector_lock():
+    """Return an open, locked file handle, or None if another collector holds the lock."""
+    import fcntl
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(LOCK_PATH, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.close()
+        return None
+    return fh
+
+
+def collector_running() -> bool:
+    fh = acquire_collector_lock()
+    if fh is None:
+        return True
+    fh.close()  # closing releases the lock straight away
+    return False
+
+
+def mark_interrupted_runs(conn) -> None:
+    """Call while holding the lock: any run still marked 'running' was killed mid-way."""
+    conn.execute("""UPDATE scrape_runs SET status='failed', finished_at=NULL,
+                    message='interrupted before finishing' WHERE status='running'""")
+    conn.commit()
 
 
 def finish_run(conn, run_id: int, **fields) -> None:

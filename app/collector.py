@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fcntl
 import hashlib
 import json
 import logging
@@ -375,14 +374,13 @@ def main() -> None:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     # Only one collector at a time (e.g. staff clicking Refresh twice, or cron overlapping a run).
-    lock_path = db.DEFAULT_DB.parent / "collector.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock = open(lock_path, "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    lock = db.acquire_collector_lock()
+    if lock is None:
         print("Summary\n  Another collection is already running. Try again in a few minutes.")
         return
+    conn = db.connect()
+    db.mark_interrupted_runs(conn)
+    conn.close()
     results = asyncio.run(collect(args.full, args.property, args.headful, args.max_pages))
     print("\nSummary")
     for r in results:

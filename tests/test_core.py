@@ -134,3 +134,25 @@ def test_week_comparison(tmp_path):
     wk = insights.week_comparison(df, date(2026, 11, 20))
     assert wk["this_avg"] == 9 and wk["last_avg"] == 5 and wk["delta"] == 4
     assert wk["low_sample"] is True
+
+
+def test_collector_lock_blocks_second_run():
+    held = db.acquire_collector_lock()
+    try:
+        assert held is not None
+        assert db.acquire_collector_lock() is None  # second collector is refused
+        assert db.collector_running() is True
+    finally:
+        held.close()
+    assert db.collector_running() is False
+
+
+def test_round1_rounds_halves_up():
+    assert insights.round1(4.25) == 4.3
+    assert insights.round1(4.24) == 4.2
+    assert insights.round1(6.05) == 6.1
+
+
+def test_busy_is_not_location():
+    assert "Location" not in classify.topics_in("Bathrooms were busy in the morning")
+    assert "Location" in classify.topics_in("The bus stop is right outside")

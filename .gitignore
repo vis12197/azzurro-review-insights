@@ -8,3 +8,4 @@ data/reviews.db-shm
 .env
 .claude/
 data/collector.lock
+data/collector.log
