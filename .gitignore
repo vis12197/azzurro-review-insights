@@ -7,3 +7,4 @@ data/reviews.db-shm
 .DS_Store
 .env
 .claude/
+data/collector.lock

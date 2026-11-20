@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import hashlib
 import json
 import logging
@@ -373,6 +374,15 @@ def main() -> None:
     ap.add_argument("--max-pages", type=int, default=200)
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # Only one collector at a time (e.g. staff clicking Refresh twice, or cron overlapping a run).
+    lock_path = db.DEFAULT_DB.parent / "collector.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = open(lock_path, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("Summary\n  Another collection is already running. Try again in a few minutes.")
+        return
     results = asyncio.run(collect(args.full, args.property, args.headful, args.max_pages))
     print("\nSummary")
     for r in results:
