@@ -178,7 +178,8 @@ complaints phrased without a keyword ("very bad communication" isn't tagged).
 - **About 40% of reviews are score-only** (no text), so topic shares are based on the reviewers who
   wrote something.
 - **Small weekly samples.** Each hotel gets a handful of reviews a week, so weekly averages swing.
-  The dashboard flags weeks with fewer than 3 reviews and shows a 90-day figure next to them.
+  The dashboard flags weeks with fewer than 3 reviews and shows the figures for the selected date
+  range (default: last 3 months) above them for comparison.
 - **Keyword rules** miss sarcasm, negation ("not dirty at all" in the disliked box is rare but
   possible) and misspellings.
 - **Depends on Booking's front end.** If Booking changes the `ReviewList` operation or blocks
